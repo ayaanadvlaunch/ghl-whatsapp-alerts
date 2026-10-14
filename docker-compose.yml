@@ -1,0 +1,62 @@
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      - PUBLIC_HOSTNAME=${PUBLIC_HOSTNAME}
+    depends_on: [n8n]
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    restart: unless-stopped
+    expose: ["5678"]
+    environment:
+      - N8N_HOST=${PUBLIC_HOSTNAME}
+      - N8N_PROTOCOL=https
+      - N8N_PORT=5678
+      - WEBHOOK_URL=https://${PUBLIC_HOSTNAME}/
+      - N8N_EDITOR_BASE_URL=https://${PUBLIC_HOSTNAME}/
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_PROXY_HOPS=1
+      - N8N_RUNNERS_ENABLED=true
+      # Lets the workflow read the values below via $env. Fine for a single-owner n8n.
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - GENERIC_TIMEZONE=${TZ:-Pacific/Auckland}
+      - TZ=${TZ:-Pacific/Auckland}
+      - WAHA_BASE_URL=http://waha:3000
+      - WAHA_API_KEY=${WAHA_API_KEY}
+      - WHATSAPP_TO=${WHATSAPP_TO}
+      - GHL_WEBHOOK_SECRET=${GHL_WEBHOOK_SECRET}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on: [waha]
+
+  waha:
+    # ARM tag for Oracle Ampere VMs. On a normal x86 server use devlikeapro/waha:latest
+    image: devlikeapro/waha:arm
+    restart: unless-stopped
+    # Loopback only: WAHA is never exposed to the internet. Reach it over an SSH tunnel.
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - WAHA_API_KEY=${WAHA_API_KEY}
+      - WAHA_PRINT_QR=false
+      - WHATSAPP_DEFAULT_ENGINE=NOWEB
+      # Restart the linked session after any reboot, otherwise it sits STOPPED and alerts silently stop.
+      - WHATSAPP_RESTART_ALL_SESSIONS=true
+      - WHATSAPP_START_SESSION=default
+    volumes:
+      - waha_data:/app/.sessions
+
+volumes:
+  caddy_data:
+  caddy_config:
+  n8n_data:
+  waha_data:

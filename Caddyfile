@@ -1,0 +1,13 @@
+{$PUBLIC_HOSTNAME} {
+	encode zstd gzip
+
+	# n8n editor + webhooks share the same port; route everything to n8n.
+	# WAHA stays internal-only — reach it via SSH tunnel for QR pairing.
+	reverse_proxy n8n:5678 {
+		flush_interval -1
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+}

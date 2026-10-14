@@ -1,0 +1,152 @@
+{
+  "name": "GHL booking → WhatsApp alert",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ghl-booking",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "3bc76d2b-b29a-4869-8e1e-b702164c559d",
+      "name": "GHL Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "e26d5d2e-11eb-4ca9-8bca-dceb9d962a9b"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Rejects anyone who doesn't know GHL_WEBHOOK_SECRET.\n// Accepted in the X-GHL-Secret header (Custom Webhook action) or as \"secret\" in Custom Data (plain Webhook action).\nconst j = $input.first().json;\nconst expected = $env.GHL_WEBHOOK_SECRET || '';\nconst received = j.headers?.['x-ghl-secret'] || j.body?.customData?.secret || j.body?.secret || '';\nif (expected && received !== expected) {\n  throw new Error('Unauthorized: bad or missing secret');\n}\nreturn $input.all();"
+      },
+      "id": "cbae0843-e658-4fb2-a527-8f186097bd0e",
+      "name": "Validate secret",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Works with both GHL actions:\n//  - Custom Webhook: your own JSON body (name, email, booked, ...)\n//  - plain Webhook : GHL sends the contact (full_name, email, phone) + your Custom Data under customData\nconst raw = $input.first().json.body || {};\nconst b = { ...raw, ...(raw.customData || {}) };\nb.name = b.name || raw.full_name || [raw.first_name, raw.last_name].filter(Boolean).join(' ');\nb.email = b.email || raw.email;\nb.phone = b.phone || raw.phone;\n\nconst isBlank = (v) => {\n  if (v == null) return true;\n  const s = String(v).trim();\n  return s === '' || s === 'null' || s === 'undefined' || s === 'None';\n};\n\n// GHL escapes real newlines in merge fields as the literal \"\\n\". Turn them back into line breaks.\nconst unescape = (v) => String(v).replace(/\\\\r\\\\n/g, '\\n').replace(/\\\\n/g, '\\n');\n\n// Every label sits above its value. Blank fields are skipped, so you can send as few as you like.\nconst fields = [\n  ['Name', b.name],\n  ['Email', b.email],\n  ['Phone', b.phone],\n  ['Booked For', b.booked],\n  ['With', b.with],\n  ['Calendar', b.calendar],\n  ['Notes', b.notes]\n];\n\nconst sections = fields\n  .filter(([, v]) => !isBlank(v))\n  .map(([k, v]) => `*${k}*\\n${unescape(v)}`)\n  .join('\\n\\n');\n\nconst heading = `📅 *${b.title || 'Strategy Call Booked'}*`;\n\n// Send {\"message\": \"...\"} instead to skip the template and post your own text.\nconst message = b.message || (sections ? `${heading}\\n\\n${sections}` : heading);\n\n// Recipient: \"to\" in the body wins, otherwise WHATSAPP_TO from .env.\n// Accepts 64211234567@c.us, a group id ...@g.us, or a plain number like +64 21 123 4567.\nlet to = String(b.to || $env.WHATSAPP_TO || '').trim();\nif (to && !to.includes('@')) to = to.replace(/\\D/g, '') + '@c.us';\nif (!to) throw new Error('No recipient: set WHATSAPP_TO in .env or send \"to\" in the body');\n\nreturn [{ json: { message, chatId: to } }];"
+      },
+      "id": "38af82fe-6acd-414c-8f82-d7d748600fa5",
+      "name": "Format message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WAHA_BASE_URL }}/api/sendText",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.WAHA_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chatId\": {{ JSON.stringify($json.chatId) }},\n  \"text\": {{ JSON.stringify($json.message) }},\n  \"session\": \"default\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "64ea867a-7ef8-421c-9ff1-5cefe5afb70d",
+      "name": "WAHA sendText",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"ok\": {{ $json.statusCode >= 200 && $json.statusCode < 300 }},\n  \"upstream\": {{ $json.statusCode }}\n}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      },
+      "id": "34e73660-f29c-404f-adfe-71900c6f7e3c",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "GHL Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate secret",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate secret": {
+      "main": [
+        [
+          {
+            "node": "Format message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format message": {
+      "main": [
+        [
+          {
+            "node": "WAHA sendText",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WAHA sendText": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
