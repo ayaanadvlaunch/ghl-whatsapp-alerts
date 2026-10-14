@@ -63,5 +63,5 @@ echo "  2. From your Mac, run: bash scripts/pair-whatsapp.sh <your VM public IP>
 echo "     (will open SSH tunnel + browser to the WAHA QR)."
 echo "  3. After pairing, scripts/list-groups.sh if you want a group instead of a person."
 echo "  4. Put the recipient in .env WHATSAPP_TO, then: docker compose up -d (re-applies env)"
-echo "  5. In n8n, import n8n/workflows/booking-to-whatsapp.json and Activate it."
+echo "  5. In n8n, import n8n/workflows/ghl-to-whatsapp.json and Activate it."
 echo "================================================"
